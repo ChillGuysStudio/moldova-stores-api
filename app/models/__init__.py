@@ -1,4 +1,11 @@
-from app.models.product import Product, ProductList, ProductLookupError, ProductPrice
+from app.models.product import (
+    MultiStoreProductSearch,
+    Product,
+    ProductList,
+    ProductLookupError,
+    ProductPrice,
+    StoreSearchError,
+)
 from app.models.store import StoreCapabilities
 
 __all__ = [
@@ -6,6 +13,7 @@ __all__ = [
     "ProductList",
     "ProductLookupError",
     "ProductPrice",
+    "MultiStoreProductSearch",
+    "StoreSearchError",
     "StoreCapabilities",
 ]
-

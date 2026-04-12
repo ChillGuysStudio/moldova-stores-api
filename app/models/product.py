@@ -47,6 +47,19 @@ class ProductList(BaseModel):
     total: int | None = None
 
 
+class StoreSearchError(BaseModel):
+    store: str
+    message: str
+
+
+class MultiStoreProductSearch(BaseModel):
+    query: str
+    page: int = 1
+    stores: list[str]
+    results: dict[str, ProductList] = Field(default_factory=dict)
+    errors: dict[str, StoreSearchError] = Field(default_factory=dict)
+
+
 class ProductLookupError(BaseModel):
     error: str
     store: str | None = None
