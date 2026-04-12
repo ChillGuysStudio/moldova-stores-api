@@ -27,12 +27,14 @@ class MaximumAdapter(StoreAdapter):
                 "x-pjax-container": "#js-pjax-container",
             },
         )
-        products = self._parse_search_cards(html)
+        soup = soup_from_html(html)
+        products = self._parse_search_cards(soup)
         return ProductList(
             store=self.store,
             query=query,
             page=page,
             products=products,
+            total=self._total_from_search(soup),
         )
 
     async def get_by_id(self, source_id: str) -> Product:
@@ -60,8 +62,7 @@ class MaximumAdapter(StoreAdapter):
             return product
         raise LookupError(f"Maximum product URL not parseable: {url}")
 
-    def _parse_search_cards(self, html: str) -> list[Product]:
-        soup = soup_from_html(html)
+    def _parse_search_cards(self, soup) -> list[Product]:
         products: list[Product] = []
         seen: set[str] = set()
 
@@ -129,6 +130,13 @@ class MaximumAdapter(StoreAdapter):
             code.decompose()
         text = element.get_text(" ", strip=True)
         return text or None
+
+    def _total_from_search(self, soup) -> int | None:
+        element = soup.select_one("#js_filter_total_products[data-count]")
+        if not element:
+            return None
+        total = to_float(element.get("data-count"))
+        return int(total) if total is not None else None
 
     def _from_compare_item(self, item: dict) -> Product:
         features = item.get("features") or {}

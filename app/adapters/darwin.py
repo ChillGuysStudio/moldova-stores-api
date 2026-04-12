@@ -22,7 +22,13 @@ class DarwinAdapter(StoreAdapter):
         html = await get_text(f"{self.base_url}/cautare?keywords={quote(query)}&page={page}")
         soup = soup_from_html(html)
         products = self._parse_search_cards(soup)
-        return ProductList(store=self.store, query=query, page=page, products=products)
+        return ProductList(
+            store=self.store,
+            query=query,
+            page=page,
+            products=products,
+            total=self._total_from_search(soup),
+        )
 
     async def get_by_id(self, source_id: str) -> Product:
         identity = get_identity(self.store, source_id)
@@ -140,3 +146,10 @@ class DarwinAdapter(StoreAdapter):
             price = card.select_one(".price, .color-green")
             current = to_float(price.get_text(" ", strip=True)) if price else None
         return ProductPrice(current=current, old=old, currency="MDL")
+
+    def _total_from_search(self, soup) -> int | None:
+        text = soup.get_text(" ", strip=True)
+        match = re.search(r"Produse\s+g[aă]site:\s*(\d[\d\s]*)", text, flags=re.IGNORECASE)
+        if not match:
+            return None
+        return int(match.group(1).replace(" ", ""))
