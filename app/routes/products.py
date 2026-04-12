@@ -31,18 +31,10 @@ HOST_TO_STORE = {
 @router.get("/search")
 async def search_products(
     q: str = Query(..., min_length=1),
-    store: str | None = Query(None, description="Single store key, e.g. smart, bomba, enter."),
-    stores: str | None = Query(None, description="Comma-separated store keys. Omit store/stores to search all."),
+    stores: str | None = Query(None, description="Comma-separated store keys. Omit to search all."),
     page: int = Query(1, ge=1),
-) -> ProductList | MultiStoreProductSearch:
-    selected_stores = _selected_stores(store=store, stores=stores)
-    if len(selected_stores) == 1 and store:
-        adapter = _adapter_or_404(selected_stores[0])
-        try:
-            return await adapter.search(q, page=page)
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-
+) -> MultiStoreProductSearch:
+    selected_stores = _selected_stores(stores=stores)
     results = await asyncio.gather(
         *[_search_store(store_key, q=q, page=page) for store_key in selected_stores],
         return_exceptions=True,
@@ -61,13 +53,8 @@ async def _search_store(store: str, *, q: str, page: int) -> ProductList:
     return await adapter.search(q, page=page)
 
 
-def _selected_stores(*, store: str | None, stores: str | None) -> list[str]:
-    if store and stores:
-        raise HTTPException(status_code=400, detail="Use either store or stores, not both")
-
-    if store:
-        selected = [store]
-    elif stores:
+def _selected_stores(*, stores: str | None) -> list[str]:
+    if stores:
         selected = [item.strip() for item in stores.split(",") if item.strip()]
     else:
         selected = list(ADAPTERS.keys())
