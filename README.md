@@ -39,8 +39,8 @@ http://127.0.0.1:8000/docs
 
 ```http
 GET /stores
-GET /products/search?q={query}&page={page}
-GET /products/search?stores={store1},{store2}&q={query}&page={page}
+GET /products/search?q={query}&page={page}&page_size={page_size}
+GET /products/search?stores={store1},{store2}&q={query}&page={page}&page_size={page_size}
 GET /products/{store}/{id}
 GET /products/by-url?url={product_url}
 ```
@@ -50,7 +50,7 @@ Examples:
 ```http
 GET /products/search?stores=smart&q=iphone&page=1
 GET /products/search?stores=smart,xstore&q=iphone&page=1
-GET /products/search?q=iphone&page=1
+GET /products/search?q=iphone&page=1&page_size=20
 GET /products/bomba/1154205
 GET /products/xstore/21351
 GET /products/by-url?url=https://xstore.md/apple/iphone/apple-iphone-15-128gb-pink
@@ -61,6 +61,7 @@ Search behavior:
 - `stores=smart` searches one store and returns a grouped multi-store response.
 - `stores=smart,xstore` searches selected stores in parallel and groups results by store.
 - Omitting `stores` searches all supported stores in parallel.
+- `page` and `page_size` are normalized by this API. `page=1&page_size=20` returns up to 20 products per store, even if a store's native page has 20, 33, 40, or 64 products.
 - Multi-store search isolates errors per store, so one failing upstream does not break the whole response.
 
 ## ID Lookup Rules

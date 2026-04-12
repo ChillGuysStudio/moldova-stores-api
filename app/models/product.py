@@ -43,6 +43,7 @@ class ProductList(BaseModel):
     store: str
     query: str
     page: int = 1
+    page_size: int | None = None
     products: list[Product]
     total: int | None = None
 
@@ -55,6 +56,7 @@ class StoreSearchError(BaseModel):
 class MultiStoreProductSearch(BaseModel):
     query: str
     page: int = 1
+    page_size: int | None = None
     stores: list[str]
     results: dict[str, ProductList] = Field(default_factory=dict)
     errors: dict[str, StoreSearchError] = Field(default_factory=dict)

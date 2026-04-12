@@ -33,13 +33,14 @@ async def search_products(
     q: str = Query(..., min_length=1),
     stores: str | None = Query(None, description="Comma-separated store keys. Omit to search all."),
     page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100, description="Normalized number of products returned per store."),
 ) -> MultiStoreProductSearch:
     selected_stores = _selected_stores(stores=stores)
     results = await asyncio.gather(
-        *[_search_store(store_key, q=q, page=page) for store_key in selected_stores],
+        *[_search_store(store_key, q=q, page=page, page_size=page_size) for store_key in selected_stores],
         return_exceptions=True,
     )
-    response = MultiStoreProductSearch(query=q, page=page, stores=selected_stores)
+    response = MultiStoreProductSearch(query=q, page=page, page_size=page_size, stores=selected_stores)
     for store_key, result in zip(selected_stores, results):
         if isinstance(result, ProductList):
             response.results[store_key] = result
@@ -48,9 +49,45 @@ async def search_products(
     return response
 
 
-async def _search_store(store: str, *, q: str, page: int) -> ProductList:
+async def _search_store(store: str, *, q: str, page: int, page_size: int) -> ProductList:
     adapter = _adapter_or_404(store)
-    return await adapter.search(q, page=page)
+    return await _normalized_search(adapter, q=q, page=page, page_size=page_size)
+
+
+async def _normalized_search(adapter, *, q: str, page: int, page_size: int) -> ProductList:
+    start = (page - 1) * page_size
+    end = start + page_size
+    products: list[Product] = []
+    seen_native_pages: set[tuple[str | None, ...]] = set()
+    total: int | None = None
+    native_page = 1
+
+    while len(products) < end:
+        result = await adapter.search(q, page=native_page)
+        if total is None:
+            total = result.total
+        if not result.products:
+            break
+
+        native_signature = tuple(product.source_id for product in result.products)
+        if native_signature in seen_native_pages:
+            break
+        seen_native_pages.add(native_signature)
+
+        products.extend(result.products)
+        if total is not None and len(products) >= total:
+            break
+
+        native_page += 1
+
+    return ProductList(
+        store=adapter.store,
+        query=q,
+        page=page,
+        page_size=page_size,
+        products=products[start:end],
+        total=total,
+    )
 
 
 def _selected_stores(*, stores: str | None) -> list[str]:
