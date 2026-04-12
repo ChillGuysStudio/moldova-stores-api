@@ -27,7 +27,7 @@ STORE_CAPABILITIES: dict[str, StoreCapabilities] = {
         supports_search=True,
         supports_url_fetch=True,
         supports_id_fetch="direct",
-        notes="Uses search suggestions and compare-cookie product JSON.",
+        notes="Uses the Romanian PJAX search HTML fragment for search and compare-cookie product JSON for ID lookup.",
     ),
     "xstore": StoreCapabilities(
         store="xstore",
@@ -57,4 +57,3 @@ STORE_CAPABILITIES: dict[str, StoreCapabilities] = {
         notes="Cold numeric Livewire ID lookup is unreliable; search/by-url fills the resolver cache.",
     ),
 }
-
