@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.adapters import ADAPTERS, ProductNotResolvedError
 from app.models.product import MultiStoreProductSearch, Product, ProductList, StoreSearchError
+from app.search_cache import cached_native_search
 
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -63,7 +64,7 @@ async def _normalized_search(adapter, *, q: str, page: int, page_size: int) -> P
     native_page = 1
 
     while len(products) < end:
-        result = await adapter.search(q, page=native_page)
+        result = await cached_native_search(adapter, query=q, page=native_page)
         if total is None:
             total = result.total
         if not result.products:

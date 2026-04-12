@@ -62,7 +62,17 @@ Search behavior:
 - `stores=smart,xstore` searches selected stores in parallel and groups results by store.
 - Omitting `stores` searches all supported stores in parallel.
 - `page` and `page_size` are normalized by this API. `page=1&page_size=20` returns up to 20 products per store, even if a store's native page has 20, 33, 40, or 64 products.
+- Native store search pages are cached in memory for a short time, so normalized pagination can reuse page data instead of refetching the same upstream pages.
 - Multi-store search isolates errors per store, so one failing upstream does not break the whole response.
+
+Search cache settings:
+
+```bash
+SEARCH_CACHE_TTL_SECONDS=300
+SEARCH_CACHE_MAX_ENTRIES=512
+```
+
+Set `SEARCH_CACHE_TTL_SECONDS=0` to disable the temporary search cache.
 
 ## ID Lookup Rules
 
