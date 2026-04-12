@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import asyncio
-import httpx
+import json
+import re
+from urllib.parse import quote
 
 from app.adapters.base import ProductNotResolvedError, StoreAdapter
-from app.clients.http import DEFAULT_HEADERS, get_text
+from app.clients.http import get_text
 from app.models.product import Product, ProductList, ProductPrice
-from app.normalizers.availability import normalize_availability
 from app.normalizers.price import to_float
 from app.normalizers.product import product_from_jsonld
-from app.parsing.html import soup_from_html
+from app.parsing.html import absolute_url, soup_from_html
 from app.parsing.jsonld import find_product_jsonld
-from app.parsing.livewire import extract_livewire_products_from_snapshot
 from app.storage.product_identity import get_identity, save_identity
 
 
@@ -19,18 +18,10 @@ class DarwinAdapter(StoreAdapter):
     store = "darwin"
     base_url = "https://darwin.md"
 
-    def __init__(self) -> None:
-        self._client: httpx.AsyncClient | None = None
-        self._csrf_token: str | None = None
-        self._search_snapshot: str | None = None
-        self._bootstrap_lock = asyncio.Lock()
-
     async def search(self, query: str, *, page: int = 1) -> ProductList:
-        if page > 1:
-            raise ValueError("Darwin direct Livewire search only supports page=1 in v1")
-
-        raw_products = await self._search_livewire(query)
-        products = [self._from_livewire_item(item) for item in raw_products]
+        html = await get_text(f"{self.base_url}/cautare?keywords={quote(query)}&page={page}")
+        soup = soup_from_html(html)
+        products = self._parse_search_cards(soup)
         return ProductList(store=self.store, query=query, page=page, products=products)
 
     async def get_by_id(self, source_id: str) -> Product:
@@ -54,98 +45,98 @@ class DarwinAdapter(StoreAdapter):
         )
         return product
 
-    async def _search_livewire(self, query: str) -> list[dict]:
-        await self._ensure_livewire_session()
-        assert self._client is not None
-        assert self._csrf_token is not None
-        assert self._search_snapshot is not None
+    def _parse_search_cards(self, soup) -> list[Product]:
+        products: list[Product] = []
+        seen: set[str] = set()
 
-        response = await self._client.post(
-            f"{self.base_url}/livewire/update",
-            json={
-                "_token": self._csrf_token,
-                "components": [
-                    {
-                        "snapshot": self._search_snapshot,
-                        "updates": {"keywords": query},
-                        "calls": [],
-                    }
-                ],
-            },
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "referer": f"{self.base_url}/",
-                "x-csrf-token": self._csrf_token,
-                "x-livewire": "",
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
-        self._search_snapshot = data["components"][0]["snapshot"]
-        return extract_livewire_products_from_snapshot(self._search_snapshot)
+        for card in soup.select(".product-items-5.ga-list .product-card.product-item"):
+            link = self._product_link_from_card(card)
+            if not link:
+                continue
+            url = absolute_url(self.base_url, link.get("href"))
+            ga4_item = self._ga4_item_from_link(link)
+            source_id = ga4_item.get("item_id")
+            if not url or not source_id or source_id in seen:
+                continue
 
-    async def _ensure_livewire_session(self) -> None:
-        if self._client and self._csrf_token and self._search_snapshot:
-            return
+            name = self._name_from_card(card, ga4_item)
+            if not name:
+                continue
+            seen.add(source_id)
 
-        async with self._bootstrap_lock:
-            if self._client and self._csrf_token and self._search_snapshot:
-                return
+            image = self._image_from_card(card)
+            product = Product(
+                store=self.store,
+                source_id=source_id,
+                sku=source_id,
+                name=name,
+                brand=ga4_item.get("item_brand"),
+                category=ga4_item.get("item_category"),
+                url=url,
+                image=image,
+                images=[image] if image else [],
+                price=self._price_from_card(card, ga4_item),
+                availability="unknown",
+                short_description=self._description_from_card(card, name),
+                source_type="html_card",
+                raw={"url": url, "ga4_item": ga4_item},
+            )
+            save_identity(store=self.store, source_id=source_id, sku=source_id, url=url, name=product.name)
+            products.append(product)
 
-            self._client = httpx.AsyncClient(follow_redirects=True, timeout=30, headers=DEFAULT_HEADERS)
-            response = await self._client.get(self.base_url)
-            response.raise_for_status()
-            soup = soup_from_html(response.text)
+        return products
 
-            csrf = soup.select_one('meta[name="csrf-token"]')
-            if not csrf or not csrf.get("content"):
-                raise LookupError("Darwin CSRF token not found")
+    def _product_link_from_card(self, card):
+        return card.select_one('a.product-link[href$=".html"], a[href$=".html"]')
 
-            for element in soup.find_all(attrs={"wire:snapshot": True}):
-                snapshot = element.get("wire:snapshot", "")
-                if '"name":"search-form"' in snapshot or '"name": "search-form"' in snapshot:
-                    self._csrf_token = csrf.get("content")
-                    self._search_snapshot = snapshot
-                    return
+    def _ga4_item_from_link(self, link) -> dict:
+        raw = link.get("data-ga4")
+        if not raw:
+            return {}
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        ecommerce = payload.get("ecommerce") or {}
+        items = ecommerce.get("items") or []
+        return items[0] if items and isinstance(items[0], dict) else {}
 
-            raise LookupError("Darwin search-form Livewire snapshot not found")
+    def _image_from_card(self, card) -> str | None:
+        image = card.select_one(".product-img img, img")
+        if not image:
+            return None
+        return absolute_url(self.base_url, image.get("data-src") or image.get("src"))
 
-    async def _reset_livewire_session(self) -> None:
-        if self._client:
-            await self._client.aclose()
-        self._client = None
-        self._csrf_token = None
-        self._search_snapshot = None
+    def _name_from_card(self, card, ga4_item: dict) -> str | None:
+        title = card.select_one(".title-product")
+        text = title.get_text(" ", strip=True) if title else ga4_item.get("item_name")
+        return text or None
 
-    def _from_livewire_item(self, item: dict) -> Product:
-        product_url = f"{self.base_url}/{item.get('slug')}" if item.get("slug") else None
-        image = item.get("image")
-        product = Product(
-            store=self.store,
-            source_id=str(item.get("id")) if item.get("id") is not None else None,
-            sku=str(item.get("id")) if item.get("id") is not None else None,
-            name=str(item.get("name") or "Unknown product").strip(),
-            brand=None,
-            category=None,
-            url=product_url,
-            image=image,
-            images=[image] if image else [],
-            price=ProductPrice(
-                current=to_float(item.get("final_price") or item.get("price")),
-                old=to_float(item.get("pre_discount_price")),
-                currency="MDL",
-            ),
-            availability=normalize_availability(item.get("stock") and int(item.get("stock", 0)) > 0),
-            short_description=item.get("short_description"),
-            source_type="livewire_snapshot",
-            raw=item,
-        )
-        save_identity(
-            store=self.store,
-            source_id=product.source_id,
-            sku=product.sku,
-            url=product.url,
-            name=product.name,
-        )
-        return product
+    def _description_from_card(self, card, name: str) -> str | None:
+        description = card.select_one(".description-product, .product-description, .color-80")
+        if description:
+            return self._clean_description(description.get_text(" ", strip=True))
+
+        link = self._product_link_from_card(card)
+        if not link:
+            return None
+        text = link.get_text(" ", strip=True)
+        if text.startswith(name):
+            text = text[len(name) :].strip()
+        text = re.sub(r"\bCashback\s+\d+(?:[.,]\d+)?\s+lei\b", "", text, flags=re.IGNORECASE).strip()
+        return self._clean_description(text)
+
+    def _clean_description(self, text: str) -> str | None:
+        text = text.strip()
+        if text.lower() in {"loading", "loading..."}:
+            return None
+        return text or None
+
+    def _price_from_card(self, card, ga4_item: dict) -> ProductPrice:
+        current = to_float(ga4_item.get("price"))
+        discount = to_float(ga4_item.get("discount"))
+        old = current + discount if current is not None and discount else None
+        if current is None:
+            price = card.select_one(".price, .color-green")
+            current = to_float(price.get_text(" ", strip=True)) if price else None
+        return ProductPrice(current=current, old=old, currency="MDL")

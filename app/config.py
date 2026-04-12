@@ -54,6 +54,6 @@ STORE_CAPABILITIES: dict[str, StoreCapabilities] = {
         supports_search=True,
         supports_url_fetch=True,
         supports_id_fetch="cached_or_resolved",
-        notes="Cold numeric Livewire ID lookup is unreliable; search/by-url fills the resolver cache.",
+        notes="Uses the Romanian HTML search page; cold numeric ID lookup is unreliable, search/by-url fills the resolver cache.",
     ),
 }
