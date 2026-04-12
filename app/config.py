@@ -36,7 +36,7 @@ STORE_CAPABILITIES: dict[str, StoreCapabilities] = {
         supports_search=True,
         supports_url_fetch=True,
         supports_id_fetch="search_resolved",
-        notes="Cold ID lookup searches by numeric ID and parses exact data-id product card.",
+        notes="Uses full HTML search cards with data-id metadata; cold ID lookup resolves through an exact search card.",
     ),
     "enter": StoreCapabilities(
         store="enter",

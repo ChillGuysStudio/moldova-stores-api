@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from urllib.parse import quote
 
 from app.adapters.base import StoreAdapter
@@ -21,8 +22,15 @@ class XstoreAdapter(StoreAdapter):
         if page > 1:
             url += f"&page={page}"
         html = await get_text(url)
-        products = self._parse_cards(html)
-        return ProductList(store=self.store, query=query, page=page, products=products)
+        soup = soup_from_html(html)
+        products = self._parse_cards(soup)
+        return ProductList(
+            store=self.store,
+            query=query,
+            page=page,
+            products=products,
+            total=self._total_from_search(soup),
+        )
 
     async def get_by_id(self, source_id: str) -> Product:
         identity = get_identity(self.store, source_id)
@@ -50,8 +58,7 @@ class XstoreAdapter(StoreAdapter):
         )
         return product
 
-    def _parse_cards(self, html: str) -> list[Product]:
-        soup = soup_from_html(html)
+    def _parse_cards(self, soup) -> list[Product]:
         products: list[Product] = []
         seen: set[str] = set()
         for element in soup.select("[data-id][data-p='item']"):
@@ -64,8 +71,9 @@ class XstoreAdapter(StoreAdapter):
                 card = card.find_parent()
             link = card.select_one("a.img-wrap[href], a.xp-title[href]") if card else None
             url = absolute_url(self.base_url, link.get("href") if link else None)
-            image_el = card.select_one("img[src]") if card else None
-            image = absolute_url(self.base_url, image_el.get("src") if image_el else None)
+            image_el = card.select_one("img") if card else None
+            image_src = image_el.get("data-src") or image_el.get("src") if image_el else None
+            image = absolute_url(self.base_url, image_src)
             product = Product(
                 store=self.store,
                 source_id=source_id,
@@ -76,11 +84,37 @@ class XstoreAdapter(StoreAdapter):
                 url=url,
                 image=image,
                 images=[image] if image else [],
-                price=ProductPrice(current=to_float(element.get("data-price")), currency="MDL"),
-                availability="unknown",
+                price=ProductPrice(
+                    current=to_float(element.get("data-price")),
+                    old=self._price_from_card(card, ".x-old"),
+                    currency="MDL",
+                ),
+                availability="in_stock" if card and card.select_one(".add_xcart") else "unknown",
+                short_description=self._text_from_card(card, ".xp-attr"),
                 source_type="html_card",
                 raw={key: value for key, value in element.attrs.items() if key.startswith("data-")},
             )
             save_identity(store=self.store, source_id=source_id, sku=source_id, url=url, name=product.name)
             products.append(product)
         return products
+
+    def _price_from_card(self, card, selector: str) -> float | None:
+        text = self._text_from_card(card, selector)
+        if not text:
+            return None
+        match = re.search(r"\d[\d\s.,]*", text)
+        return to_float(match.group(0)) if match else None
+
+    def _text_from_card(self, card, selector: str) -> str | None:
+        if not card:
+            return None
+        element = card.select_one(selector)
+        text = element.get_text(" ", strip=True) if element else None
+        return text or None
+
+    def _total_from_search(self, soup) -> int | None:
+        page_text = soup.get_text(" ", strip=True)
+        match = re.search(r"\((\d[\d\s]*)\s+produse\)", page_text)
+        if not match:
+            return None
+        return int(match.group(1).replace(" ", ""))
