@@ -35,6 +35,27 @@ Open:
 http://127.0.0.1:8000/docs
 ```
 
+## Render Deploy
+
+Use these commands for a Render Python web service:
+
+```bash
+pip install -r requirements.txt
+```
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Set these environment variables:
+
+```bash
+IDENTITY_DB_BACKEND=postgres
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+SEARCH_CACHE_TTL_SECONDS=300
+SEARCH_CACHE_MAX_ENTRIES=512
+```
+
 ## Endpoints
 
 ```http
