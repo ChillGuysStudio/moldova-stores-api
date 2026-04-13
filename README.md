@@ -26,7 +26,7 @@ venv/bin/pip install --no-build-isolation -e ".[dev]"
 ## Run
 
 ```bash
-venv/bin/uvicorn app.main:app --reload
+IDENTITY_DB_BACKEND=sqlite venv/bin/uvicorn app.main:app --reload
 ```
 
 Open:
@@ -88,7 +88,7 @@ Resolver-cache ID lookup:
 - `enter`
 - `darwin`
 
-For Enter and Darwin, `GET /products/{store}/{id}` first checks the local SQLite resolver cache. The cache is populated by:
+For Enter and Darwin, `GET /products/{store}/{id}` first checks the resolver cache. The cache is populated by:
 
 - `GET /products/search?...`
 - `GET /products/by-url?...`
@@ -106,7 +106,20 @@ If an Enter or Darwin product ID has not been resolved yet, the API returns:
 
 ## Resolver Cache
 
-The SQLite database is created at:
+Choose the resolver-cache backend explicitly. `IDENTITY_DB_BACKEND` is required:
+
+```bash
+IDENTITY_DB_BACKEND=sqlite
+```
+
+or:
+
+```bash
+IDENTITY_DB_BACKEND=postgres
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+```
+
+The SQLite profile creates its database at:
 
 ```text
 data/product_identity.sqlite3
@@ -117,6 +130,8 @@ Override it with:
 ```bash
 PRODUCT_IDENTITY_DB=/path/to/product_identity.sqlite3 venv/bin/uvicorn app.main:app --reload
 ```
+
+When `IDENTITY_DB_BACKEND=postgres`, `DATABASE_URL` is required and the app will fail clearly if it is missing.
 
 ## Notes
 
