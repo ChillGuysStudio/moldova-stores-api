@@ -54,7 +54,17 @@ IDENTITY_DB_BACKEND=postgres
 DATABASE_URL=postgresql://user:password@host:5432/dbname
 SEARCH_CACHE_TTL_SECONDS=300
 SEARCH_CACHE_MAX_ENTRIES=512
+SELF_PING_BASE_URL=https://your-api.onrender.com
 ```
+
+Optional self-ping settings:
+
+```bash
+SELF_PING_BASE_URL=https://your-api.onrender.com
+SELF_PING_INTERVAL_SECONDS=780
+```
+
+When `SELF_PING_BASE_URL` is set, the app sends a best-effort request to `/ping` every 13 minutes.
 
 ## Endpoints
 
