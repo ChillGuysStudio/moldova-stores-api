@@ -10,7 +10,7 @@ DEFAULT_SELF_PING_INTERVAL_SECONDS = 13 * 60
 
 
 def get_self_ping_url() -> str | None:
-    base_url = os.environ.get("SELF_PING_BASE_URL", "").strip().rstrip("/")
+    base_url = os.environ.get("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
     if not base_url:
         return None
     return f"{base_url}/ping"
